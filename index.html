@@ -159,6 +159,26 @@ input,select,textarea{font-family:inherit;font-size:14px}
 
 input[type=range]{width:100%;accent-color:#3b82f6}
 
+/* Gantt project filter chips */
+.gantt-filters{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;align-items:center}
+.gantt-filter-chip{padding:5px 12px;border-radius:9999px;border:1.5px solid #e2e8f0;background:#fff;font-size:12px;font-weight:500;color:#64748b;display:flex;align-items:center;gap:5px;transition:all .15s;cursor:pointer}
+.gantt-filter-chip:hover{background:#f8fafc}
+.gantt-filter-chip.active{color:#fff;border-color:transparent}
+.gantt-filter-chip .chip-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.gantt-filter-label{font-size:11px;color:#94a3b8;font-weight:600;margin-right:4px}
+
+/* Gantt accordion toggle */
+.gantt-proj-toggle{cursor:pointer;user-select:none;transition:background .1s}
+.gantt-proj-toggle:hover{filter:brightness(.97)}
+.gantt-accordion-icon{display:inline-block;transition:transform .2s;font-size:10px;margin-right:6px;color:#94a3b8}
+
+/* Gantt tooltip */
+.gantt-tooltip{position:fixed;z-index:200;background:#1e293b;color:#fff;padding:10px 14px;border-radius:10px;font-size:12px;line-height:1.6;pointer-events:none;box-shadow:0 8px 24px rgba(0,0,0,.25);max-width:260px;white-space:nowrap}
+.gantt-tooltip::after{content:'';position:absolute;top:100%;left:50%;transform:translateX(-50%);border:6px solid transparent;border-top-color:#1e293b}
+
+/* Gantt summary bar (project-level) */
+.gantt-summary-bar{position:absolute;top:12px;bottom:12px;border-radius:4px;opacity:.35;z-index:1}
+
 /* ── Hamburger ── */
 .hamburger{display:none;width:36px;height:36px;border-radius:8px;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;background:#f1f5f9;color:#374151}
 .hamburger:hover{background:#e2e8f0}
@@ -281,6 +301,8 @@ const S={
   viewStart:(()=>{const d=new Date(today);d.setDate(d.getDate()-d.getDay());return d.toISOString().split('T')[0];})(),
   search:   '',
   filterMember: null,   // member id or null
+  ganttOpenProjs: {},   // {projId: true/false} — accordion state
+  ganttFilterProjs: [], // [] = all, [id,...] = selected
   modal:    null,
   selProj:  null,
   projFormOpen: false,
@@ -746,16 +768,69 @@ function buildFilterBanner(){
   return banner;
 }
 
+// ── Gantt Tooltip ─────────────────────────────────────────────
+let _tooltip=null;
+function showTooltip(e,task){
+  hideTooltip();
+  const proj=S.projects.find(p=>p.id===task.projectId);
+  const delayed=isDelayed(task);
+  const sc=STATUS_CFG[task.status]||STATUS_CFG['未着手'];
+  const tip=d('gantt-tooltip');
+  const hc=task.actualHours>task.estimatedHours?'#fca5a5':'#94a3b8';
+  tip.innerHTML=`<div style="font-weight:700;margin-bottom:4px">${task.name}</div>`
+    +`<div style="color:#94a3b8;font-size:11px;margin-bottom:6px">${proj?proj.name:''}</div>`
+    +(delayed?'<div style="color:#fca5a5;font-weight:600;margin-bottom:4px">⚠ 遅延中</div>':'')
+    +`<div>📋 ${task.status} ・ 進捗 ${task.progress}%</div>`
+    +`<div>👤 ${task.assignee}</div>`
+    +`<div>📅 ${fmtD(task.startDate)} 〜 ${fmtD(task.endDate)}</div>`
+    +`<div style="color:${hc}">⏱ 見積 ${task.estimatedHours}h / 実績 ${task.actualHours}h</div>`;
+  document.body.appendChild(tip);
+  const r=tip.getBoundingClientRect();
+  let left=e.clientX-r.width/2;
+  let top=e.clientY-r.height-14;
+  if(left<4)left=4;if(left+r.width>window.innerWidth-4)left=window.innerWidth-r.width-4;
+  if(top<4)top=e.clientY+18;
+  tip.style.left=left+'px';tip.style.top=top+'px';
+  _tooltip=tip;
+}
+function hideTooltip(){if(_tooltip){_tooltip.remove();_tooltip=null;}}
+
 // ── Gantt ──────────────────────────────────────────────────────
 function buildGantt(){
   const vd=S.calView==='week'?7:28;
   const days=Array.from({length:vd},(_,i)=>addDays(S.viewStart,i));
   const COL=Math.max(40,Math.floor(Math.min(900,window.innerWidth-440)/vd));
 
+  const wrap=d('');
+
+  // ── Project filter chips ──
+  const filters=d('gantt-filters');
+  filters.appendChild(el('span',{cls:'gantt-filter-label'},['案件絞込:']));
+  const allActive=S.ganttFilterProjs.length===0;
+  const allChip=el('button',{cls:'gantt-filter-chip'+(allActive?' active':''),style:allActive?{background:'#374151',color:'#fff',borderColor:'transparent'}:{}},[' すべて']);
+  allChip.onclick=()=>{S.ganttFilterProjs=[];render();};
+  filters.appendChild(allChip);
+  S.projects.forEach(proj=>{
+    const active=S.ganttFilterProjs.includes(proj.id);
+    const chip=el('button',{cls:'gantt-filter-chip'+(active?' active':'')});
+    if(active){chip.style.background=proj.color;chip.style.color='#fff';chip.style.borderColor='transparent';}
+    const cd=d('chip-dot');cd.style.background=active?'#fff':proj.color;
+    chip.appendChild(cd);
+    chip.appendChild(document.createTextNode(proj.name));
+    chip.onclick=()=>{
+      if(active)S.ganttFilterProjs=S.ganttFilterProjs.filter(i=>i!==proj.id);
+      else S.ganttFilterProjs.push(proj.id);
+      render();
+    };
+    filters.appendChild(chip);
+  });
+  wrap.appendChild(filters);
+
+  // ── Table ──
   const outer=d('gantt-outer');
   const table=el('table',{cls:'gantt-table'});
 
-  // ── THEAD ──
+  // THEAD
   const thead=el('thead');
   const hr=el('tr');
   hr.appendChild(el('th',{cls:'gantt-label-th'},['プロジェクト / タスク']));
@@ -770,87 +845,112 @@ function buildGantt(){
   thead.appendChild(hr);
   table.appendChild(thead);
 
-  // ── TBODY ──
+  // TBODY
   const tbody=el('tbody');
   const tasks=filteredTasks();
+  const visibleProjects=S.ganttFilterProjs.length?S.projects.filter(p=>S.ganttFilterProjs.includes(p.id)):S.projects;
 
-  S.projects.forEach(proj=>{
+  visibleProjects.forEach(proj=>{
     const projTasks=tasks.filter(t=>t.projectId===proj.id);
     const allProjTasks=S.tasks.filter(t=>t.projectId===proj.id);
     const done=allProjTasks.filter(t=>t.status==='完了').length;
     const pct=allProjTasks.length?Math.round(done/allProjTasks.length*100):0;
+    if(S.ganttOpenProjs[proj.id]===undefined)S.ganttOpenProjs[proj.id]=true;
+    const isOpen=S.ganttOpenProjs[proj.id];
 
-    // Project header row
-    const pRow=el('tr',{style:{background:proj.color+'12'}});
+    // ── Project header row (clickable accordion) ──
+    const pRow=el('tr',{cls:'gantt-proj-toggle',style:{background:proj.color+'12'}});
     const pLbl=el('td',{cls:'gantt-proj-td-label',style:{background:proj.color+'12'}});
     pLbl.style.borderBottom='1px solid '+proj.color+'30';
-    const pLblInner=d('',null,{display:'flex',alignItems:'center',gap:'8px'});
-    const dot=d('proj-dot');dot.style.background=proj.color;
-    pLblInner.appendChild(dot);
+    const pLblInner=d('',null,{display:'flex',alignItems:'center',gap:'6px'});
+    const arrow=el('span',{cls:'gantt-accordion-icon',style:{transform:isOpen?'rotate(90deg)':'rotate(0deg)'}},['▶']);
+    pLblInner.appendChild(arrow);
+    const dotP=d('proj-dot');dotP.style.background=proj.color;
+    pLblInner.appendChild(dotP);
     pLblInner.appendChild(el('span',{style:{fontSize:'12px',fontWeight:'700',color:'#374151',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},[proj.name]));
+    pLblInner.appendChild(el('span',{style:{fontSize:'11px',color:'#94a3b8',marginLeft:'4px'}},[projTasks.length+'件']));
     pLbl.appendChild(pLblInner);
     pRow.appendChild(pLbl);
 
-    // Progress bar spanning all day columns
-    const pBar=el('td',{colspan:vd,cls:'gantt-proj-td-bar',style:{borderBottom:'1px solid '+proj.color+'30',background:proj.color+'08'}});
-    const pbWrap=d('',null,{display:'flex',alignItems:'center',gap:'10px',padding:'0 8px'});
+    // Project bar cell — show summary bar (project date range) + progress info
+    const pBar=el('td',{colspan:vd,cls:'gantt-proj-td-bar',style:{borderBottom:'1px solid '+proj.color+'30',background:proj.color+'08',position:'relative'}});
+
+    // Summary bar: project overall date span
+    if(allProjTasks.length){
+      const projStart=allProjTasks.reduce((m,t)=>t.startDate<m?t.startDate:m,allProjTasks[0].startDate);
+      const projEnd=allProjTasks.reduce((m,t)=>t.endDate>m?t.endDate:m,allProjTasks[0].endDate);
+      const clampS2=projStart<days[0]?days[0]:(projStart>days[vd-1]?null:projStart);
+      const clampE2=projEnd>days[vd-1]?days[vd-1]:(projEnd<days[0]?null:projEnd);
+      if(clampS2&&clampE2){
+        const leftIdx2=daysDiff(S.viewStart,clampS2);
+        const widthDays2=daysDiff(clampS2,clampE2)+1;
+        const summaryBar=d('gantt-summary-bar');
+        summaryBar.style.left=(leftIdx2*COL+2)+'px';
+        summaryBar.style.width=(widthDays2*COL-4)+'px';
+        summaryBar.style.background=proj.color;
+        pBar.appendChild(summaryBar);
+      }
+    }
+
+    const pbWrap=d('',null,{display:'flex',alignItems:'center',gap:'10px',padding:'0 8px',position:'relative',zIndex:'2'});
     const pb=d('progress-wrap',null,{flex:'1',maxWidth:'300px'});
     const pf=d('progress-fill');pf.style.width=pct+'%';pf.style.background=proj.color;pb.appendChild(pf);
     pbWrap.appendChild(pb);
-    pbWrap.appendChild(el('span',{style:{fontSize:'11px',color:'#94a3b8',whiteSpace:'nowrap'}},[done+'/'+allProjTasks.length+' ('+pct+'%)']));
+    pbWrap.appendChild(el('span',{style:{fontSize:'11px',color:'#64748b',whiteSpace:'nowrap',fontWeight:'600'}},[done+'/'+allProjTasks.length+' ('+pct+'%)']));
+    if(!isOpen&&allProjTasks.length){
+      const projStart=allProjTasks.reduce((m,t)=>t.startDate<m?t.startDate:m,allProjTasks[0].startDate);
+      const projEnd=allProjTasks.reduce((m,t)=>t.endDate>m?t.endDate:m,allProjTasks[0].endDate);
+      pbWrap.appendChild(el('span',{style:{fontSize:'11px',color:'#94a3b8',marginLeft:'8px'}},['📅 '+fmtD(projStart)+' 〜 '+fmtD(projEnd)]));
+    }
     pBar.appendChild(pbWrap);
     pRow.appendChild(pBar);
+
+    pRow.onclick=()=>{S.ganttOpenProjs[proj.id]=!S.ganttOpenProjs[proj.id];render();};
     tbody.appendChild(pRow);
 
-    // Task rows
+    // ── Task rows (only when open) ──
+    if(!isOpen)return;
+
     if(projTasks.length===0){
       const er=el('tr');
       er.appendChild(el('td',{cls:'gantt-task-td-label',style:{background:'#fafafa'}},[]));
       er.appendChild(el('td',{colspan:vd,style:{height:'36px',borderBottom:'1px solid #f1f5f9',background:'#fafafa'}}));
       tbody.appendChild(er);
     }else{
-      // Max 2 rows visible, scrollable
       const containerTr=el('tr');
       const containerTd=el('td',{colspan:vd+1,style:{padding:'0',border:'none'}});
-      const scrollDiv=d('',null,{maxHeight:'132px',overflowY:'auto'});
-
-      // Use a nested table for proper column alignment
-      const innerTable=el('table',{style:{borderCollapse:'collapse',width:'100%',tableLayout:'fixed'}});
 
       projTasks.forEach(task=>{
         const delayed=isDelayed(task);
         const sc=STATUS_CFG[task.status]||STATUS_CFG['未着手'];
-        const tr=el('tr',{cls:'gantt-task-td-label',style:{cursor:'pointer',transition:'background .1s',display:'table-row',background:delayed?'#fff8f8':''}});
+        const tr=el('tr',{style:{cursor:'pointer',transition:'background .1s',display:'flex',background:delayed?'#fff8f8':''}});
         tr.addEventListener('mouseenter',()=>tr.style.background=delayed?'#fef2f2':'#f8fafc');
         tr.addEventListener('mouseleave',()=>tr.style.background=delayed?'#fff8f8':'');
 
-        // Label cell (fixed 200px)
-        const labelTd=el('td',{style:{width:'200px',minWidth:'200px',maxWidth:'200px',padding:'6px 12px',borderBottom:'1px solid #f1f5f9',borderRight:'1px solid #e2e8f0',verticalAlign:'middle',background:'#fff',position:'sticky',left:'0',zIndex:'4',cursor:'pointer'}});
+        // Label cell
+        const labelTd=el('td',{style:{width:'200px',minWidth:'200px',maxWidth:'200px',padding:'6px 12px',borderBottom:'1px solid #f1f5f9',borderRight:'1px solid #e2e8f0',verticalAlign:'middle',background:delayed?'#fff8f8':'#fff',position:'sticky',left:'0',zIndex:'4',cursor:'pointer'}});
         labelTd.innerHTML=`<div class="gantt-task-tname">${task.name}</div><div class="gantt-task-tdate">${fmtD(task.startDate)}〜${fmtD(task.endDate)}</div>`;
-        if(delayed)labelTd.style.background='#fff8f8';
         tr.appendChild(labelTd);
 
         // Cells container
-        const cellsTd=el('td',{cls:'gantt-cells-td',style:{padding:'0'}});
+        const cellsTd=el('td',{cls:'gantt-cells-td',style:{padding:'0',flex:'1'}});
         const inner=d('gantt-cells-inner',null,{width:COL*vd+'px',position:'relative',height:'44px'});
 
         // Background day cells
         days.forEach((day,i)=>{
           const dt=new Date(day+'T00:00:00');
           const bg=d('gantt-day-bg');
-          bg.style.left=i*COL+'px';
-          bg.style.width=COL+'px';
+          bg.style.left=i*COL+'px';bg.style.width=COL+'px';
           if(day===todayStr)bg.style.background='rgba(59,130,246,.06)';
           else if(dt.getDay()===0||dt.getDay()===6)bg.style.background='#f9fafb';
           else bg.style.background='transparent';
           inner.appendChild(bg);
         });
 
-        // Today vertical line
+        // Today line
         const todayIdx=days.indexOf(todayStr);
         if(todayIdx>=0){
-          const line=d('',null,{position:'absolute',top:'0',bottom:'0',left:(todayIdx*COL+COL/2)+'px',width:'1.5px',background:'rgba(59,130,246,.3)',zIndex:'1',pointerEvents:'none'});
-          inner.appendChild(line);
+          inner.appendChild(d('',null,{position:'absolute',top:'0',bottom:'0',left:(todayIdx*COL+COL/2)+'px',width:'1.5px',background:'rgba(59,130,246,.3)',zIndex:'1',pointerEvents:'none'}));
         }
 
         // Bar
@@ -866,27 +966,28 @@ function buildGantt(){
           bar.style.width=Math.max(barWidth,20)+'px';
           bar.style.background=delayed?'#fee2e2':sc.bg;
           bar.style.borderColor=delayed?'#ef4444':sc.color;
-          // Progress overlay
           const prog=d('gantt-bar-prog');
           prog.style.width=task.progress+'%';
           prog.style.background=delayed?'#ef4444':sc.color;
           bar.appendChild(prog);
-          // Text
           const txt=d('gantt-bar-text');
           if(delayed)txt.appendChild(el('span',{style:{fontSize:'11px',flexShrink:'0'}},['🔴']));
           txt.appendChild(el('span',{style:{fontSize:'11px',fontWeight:'700',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',color:delayed?'#b91c1c':sc.color}},[task.name]));
           txt.appendChild(el('span',{style:{fontSize:'10px',color:'#94a3b8',marginLeft:'auto',flexShrink:'0',paddingLeft:'4px'}},[task.progress+'%']));
           bar.appendChild(txt);
+          // Tooltip
+          bar.addEventListener('mouseenter',ev=>showTooltip(ev,task));
+          bar.addEventListener('mousemove',ev=>{hideTooltip();showTooltip(ev,task);});
+          bar.addEventListener('mouseleave',hideTooltip);
           inner.appendChild(bar);
         }
 
         cellsTd.appendChild(inner);
         tr.appendChild(cellsTd);
         tr.onclick=()=>{S.modal={task};render();};
-        scrollDiv.appendChild(tr);
+        containerTd.appendChild(tr);
       });
 
-      containerTd.appendChild(scrollDiv);
       containerTr.appendChild(containerTd);
       tbody.appendChild(containerTr);
     }
@@ -894,7 +995,8 @@ function buildGantt(){
 
   table.appendChild(tbody);
   outer.appendChild(table);
-  return outer;
+  wrap.appendChild(outer);
+  return wrap;
 }
 
 // ── Task List ──────────────────────────────────────────────────
