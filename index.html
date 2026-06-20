@@ -291,7 +291,7 @@ function dOff(n){return addDays(todayStr,n);}
 function daysDiff(a,b){return Math.round((new Date(b)-new Date(a))/86400000);}
 function fmtD(d){const t=new Date(d+'T00:00:00');return`${t.getMonth()+1}/${t.getDate()}`;}
 function wday(d){return'日月火水木金土'[new Date(d+'T00:00:00').getDay()];}
-function isDelayed(t){return t.endDate<todayStr&&t.status!=='完了';}
+function isDelayed(t){return t.endDate<todayStr&&(t.status==='未着手'||t.status==='進行中');}
 function isTodayTask(t){return t.startDate<=todayStr&&t.endDate>=todayStr&&t.status!=='完了';}
 function fmtHours(t){const over=t.actualHours>t.estimatedHours;return{text:t.actualHours+'h / '+t.estimatedHours+'h',color:over?'var(--danger)':'var(--ink-400)',weight:over?'var(--weight-semibold)':'var(--weight-normal)'};}
 
