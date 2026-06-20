@@ -1083,9 +1083,10 @@ function buildTodayView(){
 function buildProjectMgmt(){
   if(!S.selProj&&S.projects.length)S.selProj=S.projects[0].id;
   const wrap=d('');
+  const fTasks=filteredTasks();
   const tabs=d('proj-tabs-wrap');
   S.projects.forEach(proj=>{
-    const pt=S.tasks.filter(t=>t.projectId===proj.id);
+    const pt=fTasks.filter(t=>t.projectId===proj.id);
     const done2=pt.filter(t=>t.status==='完了').length;
     const pct=pt.length?Math.round(done2/pt.length*100):0;
     const btn=d('proj-tab'+(S.selProj===proj.id?' active':''));
@@ -1104,7 +1105,7 @@ function buildProjectMgmt(){
 
   const proj=S.projects.find(p=>p.id===S.selProj);
   if(!proj)return wrap;
-  const projTasks=S.tasks.filter(t=>t.projectId===proj.id);
+  const projTasks=fTasks.filter(t=>t.projectId===proj.id);
 
   const card=d('card');
   const ch=d('card-header',null,{background:proj.color+'10'});
