@@ -275,7 +275,13 @@ input[type=range]{width:100%;accent-color:var(--brand-500)}
 <div id="app"></div>
 <script>
 // ── 定数 ──────────────────────────────────────────────────────
-const STATUS_CFG={'未着手':{color:'#94a3b8',bg:'#f1f5f9'},'進行中':{color:'#3b82f6',bg:'#eff6ff'},'確認中':{color:'#f59e0b',bg:'#fffbeb'},'完了':{color:'#10b981',bg:'#f0fdf4'}};
+const STATUS_CFG={
+  '未着手':{color:'#94a3b8',bg:'#f1f5f9',rowBg:'transparent'},
+  '進行中':{color:'#3b82f6',bg:'#eff6ff',rowBg:'#f0f7ff'},
+  '確認中':{color:'#16a34a',bg:'#f0fdf4',rowBg:'#f0fdf4'},
+  '完了':{color:'#10b981',bg:'#f0fdf4',rowBg:'#f8f9fa'},
+  '保留':{color:'#e11d48',bg:'#fff1f2',rowBg:'#fff5f6'},
+};
 const STATUS_DOT={'稼働中':'#10b981','対応中':'#f59e0b','休暇中':'#94a3b8','打合中':'#8b5cf6'};
 
 const today=new Date();
@@ -950,12 +956,13 @@ function buildGantt(){
       projTasks.forEach(task=>{
         const delayed=isDelayed(task);
         const sc=STATUS_CFG[task.status]||STATUS_CFG['未着手'];
-        const tr=el('tr',{style:{cursor:'pointer',transition:'background .1s',display:'flex',background:delayed?'#fff8f8':''}});
+        const rowBg=delayed?'#fff8f8':(sc.rowBg!=='transparent'?sc.rowBg:'');
+        const tr=el('tr',{style:{cursor:'pointer',transition:'background .1s',display:'flex',background:rowBg}});
         tr.addEventListener('mouseenter',()=>tr.style.background=delayed?'#fef2f2':'#f8fafc');
-        tr.addEventListener('mouseleave',()=>tr.style.background=delayed?'#fff8f8':'');
+        tr.addEventListener('mouseleave',()=>tr.style.background=rowBg);
 
         // Label cell
-        const labelTd=el('td',{style:{width:'200px',minWidth:'200px',maxWidth:'200px',padding:'6px 12px',borderBottom:'1px solid #f1f5f9',borderRight:'1px solid #e2e8f0',verticalAlign:'middle',background:delayed?'#fff8f8':'#fff',position:'sticky',left:'0',zIndex:'4',cursor:'pointer'}});
+        const labelTd=el('td',{style:{width:'200px',minWidth:'200px',maxWidth:'200px',padding:'6px 12px',borderBottom:'1px solid var(--ink-100)',borderRight:'1px solid var(--ink-200)',verticalAlign:'middle',background:rowBg||'#fff',position:'sticky',left:'0',zIndex:'4',cursor:'pointer'}});
         labelTd.innerHTML=`<div class="gantt-task-tname">${task.name}</div><div class="gantt-task-tdate">${fmtD(task.startDate)}〜${fmtD(task.endDate)}</div>`;
         tr.appendChild(labelTd);
 
@@ -1044,6 +1051,7 @@ function buildTaskList(){
     const delayed=isDelayed(task);
     const sc=STATUS_CFG[task.status]||STATUS_CFG['未着手'];
     const row=d('task-row-grid'+(delayed?' delayed':''));
+    if(!delayed&&sc.rowBg!=='transparent')row.style.background=sc.rowBg;
     row.style.gridTemplateColumns=cols;
     const nc=d('');
     const nr=d('',null,{display:'flex',alignItems:'center',gap:'6px'});
@@ -1082,6 +1090,7 @@ function buildTodayView(){
     const delayed=isDelayed(task);
     const sc=STATUS_CFG[task.status]||STATUS_CFG['未着手'];
     const card=d('today-card'+(delayed?' delayed':''));
+    if(!delayed&&sc.rowBg!=='transparent')card.style.background=sc.rowBg;
     const top=d('',null,{display:'flex',gap:'12px',alignItems:'flex-start'});
     const left=d('',null,{flex:'1',minWidth:'0'});
     const nr=d('',null,{display:'flex',alignItems:'center',gap:'8px',flexWrap:'wrap'});
@@ -1187,6 +1196,7 @@ function buildProjectMgmt(){
       const delayed=isDelayed(task);
       const sc=STATUS_CFG[task.status]||STATUS_CFG['未着手'];
       const row=d('proj-task-row'+(delayed?' delayed':''));
+      if(!delayed&&sc.rowBg!=='transparent')row.style.background=sc.rowBg;
       const dot2=d('proj-dot',null,{marginTop:'5px',flexShrink:'0'});dot2.style.background=sc.color;
       row.appendChild(dot2);
       const info=d('',null,{flex:'1',minWidth:'0'});
